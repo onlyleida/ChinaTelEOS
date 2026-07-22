@@ -4,7 +4,7 @@
     {
       "label": "编译并启动项目",
       "type": "shell",
-      "command": "./scripts/quit_app.sh && export CLANG_MODULE_CACHE_PATH=\"${TMPDIR:-/private/tmp}/cloudbox-clang-cache\" SWIFTPM_CUSTOM_CACHE_PATH=\"${TMPDIR:-/private/tmp}/cloudbox-swiftpm-cache\" && ./scripts/build_native_app.sh && open \"build/翼存 CloudBox.app\"",
+      "command": "./scripts/run_native_app.sh release",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -22,7 +22,7 @@
     {
       "label": "Swift 开发运行",
       "type": "shell",
-      "command": "./scripts/quit_app.sh && export CLANG_MODULE_CACHE_PATH=\"${TMPDIR:-/private/tmp}/cloudbox-clang-cache\" SWIFTPM_CUSTOM_CACHE_PATH=\"${TMPDIR:-/private/tmp}/cloudbox-swiftpm-cache\" && swift run CloudBox",
+      "command": "./scripts/run_native_app.sh debug",
       "options": {
         "cwd": "${workspaceFolder}"
       },

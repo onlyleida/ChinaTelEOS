@@ -11,7 +11,7 @@
 - 递归遍历文件夹中的所有子文件并保持目录结构
 - 显示单文件进度和总体上传进度
 - 删除文件；删除文件夹时同时删除其全部对象
-- Access Key 和 Secret Key 保存在 macOS 钥匙串（不进入 Git）
+- Access Key 和 Secret Key 保存在项目目录 `cloudbox.local.json`（已加入 `.gitignore`，不进入 Git）
 
 ## 系统要求
 
@@ -42,11 +42,11 @@ swift test
 
 | 内容 | 存放位置 | 是否进 Git |
 |------|----------|------------|
-| Access Key / Secret Key / Endpoint 等 | macOS 钥匙串（`KeychainStore`） | 否 |
+| Access Key / Secret Key / Endpoint 等 | 项目根目录 `cloudbox.local.json` | 否（已 ignore） |
 | VS Code / Cursor 个人设置 | `.vscode/settings.json`（本地） | 否（已 ignore） |
 | 共享构建与 Push 任务 | `.vscode/tasks.json` | 是 |
 
-首次连接时在应用内填写凭证即可，之后由钥匙串自动加载。
+首次连接成功后会写入 `cloudbox.local.json`，下次启动自动加载。
 
 ## 项目结构
 
@@ -57,6 +57,6 @@ NativeCloudBox/Sources/CloudBox/
   CloudViewModel.swift    目录、删除和递归上传流程
   CloudClient.swift       天翼云 S3 兼容 API
   AWSSigner.swift         AWS Signature V4 请求签名
-  KeychainStore.swift     macOS 钥匙串凭证存储
+  ConfigStore.swift       本地 `cloudbox.local.json` 凭证存储
   Models.swift            配置与上传任务模型
 ```

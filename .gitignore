@@ -25,6 +25,7 @@ xcuserdata/
 .env
 .env.*
 *.local
+cloudbox.local.json
 
 # Editor leftovers
 *~

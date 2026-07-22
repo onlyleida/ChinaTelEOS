@@ -3,8 +3,8 @@ import SwiftUI
 
 @MainActor
 final class CloudViewModel: ObservableObject {
-    @Published var configuration = KeychainStore.load() ?? CloudConfiguration()
-    @Published var isShowingConnection = KeychainStore.load() == nil
+    @Published var configuration = ConfigStore.load() ?? CloudConfiguration()
+    @Published var isShowingConnection = ConfigStore.load() == nil
     @Published var isConnected = false
     @Published var isLoading = false
     @Published var items: [CloudItem] = []
@@ -30,9 +30,9 @@ final class CloudViewModel: ObservableObject {
     func connect() async {
         guard configuration.isValid else { errorMessage = CloudError.invalidConfiguration.localizedDescription; return }
         do {
-            try KeychainStore.save(configuration)
             client = CloudClient(configuration: configuration)
             try await refreshThrowing()
+            try ConfigStore.save(configuration)
             isConnected = true
             isShowingConnection = false
         } catch { errorMessage = error.localizedDescription }

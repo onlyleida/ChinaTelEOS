@@ -142,7 +142,7 @@ private struct ConnectionView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Image(systemName: "externaldrive.connected.to.line.below.fill").font(.title).foregroundStyle(.blue); VStack(alignment: .leading) { Text("连接天翼云对象存储").font(.title2).fontWeight(.bold); Text("使用 S3 兼容 Endpoint，凭证保存在 macOS 钥匙串中。") .font(.caption).foregroundStyle(.secondary) } }
+            HStack { Image(systemName: "externaldrive.connected.to.line.below.fill").font(.title).foregroundStyle(.blue); VStack(alignment: .leading) { Text("连接天翼云对象存储").font(.title2).fontWeight(.bold); Text("使用 S3 兼容 Endpoint，连接成功后写入当前目录 \(ConfigStore.fileName)。") .font(.caption).foregroundStyle(.secondary) } }
             Form {
                 TextField("Endpoint", text: $model.configuration.endpoint)
                 TextField("区域", text: $model.configuration.region)

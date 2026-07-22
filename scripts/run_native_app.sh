@@ -3,8 +3,10 @@ set -euo pipefail
 
 cd "${0:A:h}/.."
 
+CONFIGURATION="${1:-debug}"
+
 ./scripts/quit_app.sh
-./scripts/build_native_app.sh
+./scripts/build_native_app.sh "$CONFIGURATION"
 
 APP_PATH="build/翼存 CloudBox.app"
 open "$APP_PATH"
