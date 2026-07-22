@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode / SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+
+# App build output
+/build/
+
+# Personal / local tooling (never commit)
+.openai/
+.wrangler/
+.vscode/settings.json
+.vscode/launch.json
+.vscode/*.code-workspace
+*.pem
+.env
+.env.*
+*.local
+
+# Editor leftovers
+*~
+*.swp
