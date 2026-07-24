@@ -21,10 +21,16 @@ final class CloudClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     }
 
     // URLSession's async upload API exposes reliable byte progress through this delegate.
-    func uploadFile(file: URL, key: String, progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
+    func uploadFile(file: URL, key: String, acl: ObjectAcl = .private, progress: @escaping @Sendable (Int64, Int64) -> Void) async throws {
         let hash = try AWSSigner.fileHash(file)
         let url = try makeURL(key: key)
-        var request = AWSSigner.signedRequest(url: url, method: "PUT", bodyHash: hash, configuration: configuration)
+        var request = AWSSigner.signedRequest(
+            url: url,
+            method: "PUT",
+            bodyHash: hash,
+            configuration: configuration,
+            extraHeaders: ["x-amz-acl": acl.headerValue]
+        )
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         let relay = UploadRelay()
         let task = session.uploadTask(with: request, fromFile: file) { data, response, error in
@@ -47,6 +53,32 @@ final class CloudClient: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         } else {
             try await deleteObject(key: item.key)
         }
+    }
+
+    /// Sets canned ACL on a file, or on every object under a folder prefix.
+    @discardableResult
+    func setAcl(item: CloudItem, acl: ObjectAcl) async throws -> Int {
+        if item.isFolder {
+            let objects = try await allObjectKeys(prefix: item.key)
+            for key in objects { try await putObjectAcl(key: key, acl: acl) }
+            return objects.count
+        } else {
+            try await putObjectAcl(key: item.key, acl: acl)
+            return 1
+        }
+    }
+
+    func putObjectAcl(key: String, acl: ObjectAcl) async throws {
+        let url = try makeURL(key: key, query: ["acl": ""])
+        let request = AWSSigner.signedRequest(
+            url: url,
+            method: "PUT",
+            bodyHash: AWSSigner.sha256(Data()),
+            configuration: configuration,
+            extraHeaders: ["x-amz-acl": acl.headerValue]
+        )
+        let (data, response) = try await session.data(for: request)
+        try validate(response, data: data)
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {

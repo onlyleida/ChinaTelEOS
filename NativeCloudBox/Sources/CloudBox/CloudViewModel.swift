@@ -75,11 +75,65 @@ final class CloudViewModel: ObservableObject {
     }
 
     func enqueue(_ urls: [URL]) {
+        guard let acl = askPublicReadForUpload() else { return }
         do {
-            let entries = try urls.flatMap { try Self.expand($0, remotePrefix: prefix) }
+            let entries = try urls.flatMap { try Self.expand($0, remotePrefix: prefix, acl: acl) }
             uploads.append(contentsOf: entries)
             Task { await runQueuedUploads() }
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    func confirmSetPermissions(_ item: CloudItem) {
+        guard let acl = askObjectAcl(
+            title: "设置读写权限",
+            message: item.isFolder
+                ? "为文件夹「\(item.name)」下的所有文件设置访问权限。"
+                : "为文件「\(item.name)」设置访问权限。"
+        ) else { return }
+        Task {
+            do {
+                let count = try await client?.setAcl(item: item, acl: acl) ?? 0
+                let alert = NSAlert()
+                alert.messageText = "权限已更新"
+                alert.informativeText = item.isFolder
+                    ? "已将 \(count) 个对象设置为「\(acl.title)」。"
+                    : "「\(item.name)」已设置为「\(acl.title)」。"
+                alert.addButton(withTitle: "好")
+                alert.runModal()
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func askPublicReadForUpload() -> ObjectAcl? {
+        let alert = NSAlert()
+        alert.messageText = "上传权限"
+        alert.informativeText = "是否支持公共读？开启后，知道对象链接的人无需密钥即可下载。"
+        alert.addButton(withTitle: "公共读")
+        alert.addButton(withTitle: "仅私有")
+        alert.addButton(withTitle: "取消")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .publicRead
+        case .alertSecondButtonReturn: return .private
+        default: return nil
+        }
+    }
+
+    private func askObjectAcl(title: String, message: String) -> ObjectAcl? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 280, height: 26), pullsDown: false)
+        for acl in ObjectAcl.allCases {
+            popup.addItem(withTitle: "\(acl.title) — \(acl.detail)")
+            popup.lastItem?.representedObject = acl.rawValue
+        }
+        popup.selectItem(at: 0)
+        alert.accessoryView = popup
+        alert.addButton(withTitle: "应用")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let raw = popup.selectedItem?.representedObject as? String ?? ObjectAcl.private.rawValue
+        return ObjectAcl(rawValue: raw) ?? .private
     }
 
     private func runQueuedUploads() async {
@@ -88,7 +142,7 @@ final class CloudViewModel: ObservableObject {
             uploads[index].state = .uploading
             let entry = uploads[index]
             do {
-                try await client.uploadFile(file: entry.sourceURL, key: entry.remoteKey) { [weak self] sent, total in
+                try await client.uploadFile(file: entry.sourceURL, key: entry.remoteKey, acl: entry.acl) { [weak self] sent, total in
                     Task { @MainActor in
                         guard let self, let current = self.uploads.firstIndex(where: { $0.id == entry.id }) else { return }
                         self.uploads[current].sent = total > 0 ? min(sent, total) : sent
@@ -108,10 +162,10 @@ final class CloudViewModel: ObservableObject {
         items = try await client!.list(prefix: prefix)
     }
 
-    nonisolated static func expand(_ url: URL, remotePrefix: String) throws -> [UploadEntry] {
+    nonisolated static func expand(_ url: URL, remotePrefix: String, acl: ObjectAcl = .private) throws -> [UploadEntry] {
         let values = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
         guard values.isDirectory == true else {
-            return [UploadEntry(sourceURL: url, remoteKey: remotePrefix + url.lastPathComponent, relativePath: url.lastPathComponent, size: Int64(values.fileSize ?? 0))]
+            return [UploadEntry(sourceURL: url, remoteKey: remotePrefix + url.lastPathComponent, relativePath: url.lastPathComponent, size: Int64(values.fileSize ?? 0), acl: acl)]
         }
         let root = url.deletingLastPathComponent().resolvingSymlinksInPath()
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .fileSizeKey]
@@ -122,7 +176,7 @@ final class CloudViewModel: ObservableObject {
             guard childValues.isRegularFile == true else { continue }
             let resolvedChild = child.resolvingSymlinksInPath()
             let relative = resolvedChild.pathComponents.dropFirst(root.pathComponents.count).joined(separator: "/")
-            result.append(UploadEntry(sourceURL: child, remoteKey: remotePrefix + relative, relativePath: relative, size: Int64(childValues.fileSize ?? 0)))
+            result.append(UploadEntry(sourceURL: child, remoteKey: remotePrefix + relative, relativePath: relative, size: Int64(childValues.fileSize ?? 0), acl: acl))
         }
         return result
     }

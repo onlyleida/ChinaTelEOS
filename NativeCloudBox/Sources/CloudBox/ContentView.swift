@@ -1,9 +1,41 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum BrowseDisplayMode: String, CaseIterable, Identifiable {
+    case list
+    case icons
+
+    var id: String { rawValue }
+
+    var systemImage: String {
+        switch self {
+        case .list: "list.bullet"
+        case .icons: "square.grid.2x2"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .list: "列表"
+        case .icons: "图标"
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var model = CloudViewModel()
     @State private var isDropTarget = false
+    @AppStorage("browseDisplayMode") private var displayModeRaw = BrowseDisplayMode.list.rawValue
+    @AppStorage("browseIconSize") private var iconSize = 72.0
+    @State private var iconSizeAtGestureStart: Double?
+
+    private var displayMode: BrowseDisplayMode {
+        BrowseDisplayMode(rawValue: displayModeRaw) ?? .list
+    }
+
+    private var clampedIconSize: Double {
+        min(160, max(48, iconSize))
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -47,7 +79,13 @@ struct ContentView: View {
             Divider()
             if model.isLoading && model.items.isEmpty { ProgressView("正在读取目录…").frame(maxWidth: .infinity, maxHeight: .infinity) }
             else if model.visibleItems.isEmpty { emptyState }
-            else { fileTable }
+            else {
+                switch displayMode {
+                case .list: fileTable
+                case .icons: fileIcons
+                }
+            }
+            if displayMode == .icons { iconSizeBar }
             if !model.uploads.isEmpty { uploadPanel }
         }
         .background(isDropTarget ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor))
@@ -55,12 +93,21 @@ struct ContentView: View {
         .dropDestination(for: URL.self) { urls, _ in model.enqueue(urls); return true } isTargeted: { isDropTarget = $0 }
         .toolbar {
             ToolbarItemGroup {
+                Picker("显示模式", selection: $displayModeRaw) {
+                    ForEach(BrowseDisplayMode.allCases) { mode in
+                        Image(systemName: mode.systemImage).tag(mode.rawValue).help(mode.label)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 84)
+
                 Button(action: model.refresh) { Label("刷新", systemImage: "arrow.clockwise") }
                 Button(action: model.createFolder) { Label("新建文件夹", systemImage: "folder.badge.plus") }
                 Button(action: model.chooseUpload) { Label("上传", systemImage: "square.and.arrow.up") }
             }
         }
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "搜索当前文件夹")
+        .onDeleteCommand { deleteSelected() }
     }
 
     private var header: some View {
@@ -81,18 +128,95 @@ struct ContentView: View {
         Table(model.visibleItems, selection: $model.selected) {
             TableColumn("名称") { item in
                 HStack(spacing: 10) {
-                    Image(systemName: item.isFolder ? "folder.fill" : icon(for: item.name)).foregroundStyle(item.isFolder ? .blue : .secondary).font(.title3)
+                    Image(systemName: item.isFolder ? "folder.fill" : iconName(for: item.name)).foregroundStyle(item.isFolder ? .blue : .secondary).font(.title3)
                     Text(item.name).lineLimit(1)
-                }.contentShape(Rectangle()).onTapGesture(count: 2) { model.open(item) }
-                 .contextMenu {
-                    if item.isFolder { Button("打开") { model.open(item) } }
-                    Divider(); Button("删除", role: .destructive) { model.confirmDelete(item) }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { model.open(item) }
+                .contextMenu { itemContextMenu(item) }
             }.width(min: 260, ideal: 430)
             TableColumn("大小") { item in Text(item.isFolder ? "—" : ByteCountFormatter.string(fromByteCount: item.size, countStyle: .file)).foregroundStyle(.secondary) }.width(100)
             TableColumn("修改时间") { item in Text(item.modifiedAt?.formatted(date: .abbreviated, time: .shortened) ?? "—").foregroundStyle(.secondary) }.width(150)
         }
-        .onDeleteCommand { if let id = model.selected, let item = model.items.first(where: { $0.id == id }) { model.confirmDelete(item) } }
+    }
+
+    private var fileIcons: some View {
+        let size = clampedIconSize
+        let cellWidth = size + 36
+        return ScrollView {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: cellWidth, maximum: cellWidth + 12), spacing: 8)],
+                spacing: 12
+            ) {
+                ForEach(model.visibleItems) { item in
+                    iconCell(item, iconSize: size)
+                }
+            }
+            .padding(20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .simultaneousGesture(
+            MagnificationGesture()
+                .onChanged { scale in
+                    if iconSizeAtGestureStart == nil { iconSizeAtGestureStart = clampedIconSize }
+                    if let start = iconSizeAtGestureStart {
+                        iconSize = min(160, max(48, start * scale))
+                    }
+                }
+                .onEnded { _ in iconSizeAtGestureStart = nil }
+        )
+    }
+
+    private func iconCell(_ item: CloudItem, iconSize: Double) -> some View {
+        let selected = model.selected == item.id
+        return VStack(spacing: 8) {
+            Image(systemName: item.isFolder ? "folder.fill" : iconName(for: item.name))
+                .font(.system(size: iconSize * 0.72))
+                .foregroundStyle(item.isFolder ? .blue : .secondary)
+                .frame(width: iconSize, height: iconSize)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(selected ? Color.accentColor.opacity(0.18) : Color.clear)
+                )
+
+            Text(item.name)
+                .font(.system(size: max(11, min(13, iconSize * 0.16))))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(maxWidth: iconSize + 28)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(selected ? Color.accentColor : Color.clear)
+                )
+                .foregroundStyle(selected ? Color.white : Color.primary)
+        }
+        .frame(width: iconSize + 36)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { model.open(item) }
+        .onTapGesture { model.selected = item.id }
+        .contextMenu { itemContextMenu(item) }
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var iconSizeBar: some View {
+        HStack(spacing: 10) {
+            Text("\(model.visibleItems.count) 项").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Image(systemName: "minus.magnifyingglass").font(.caption).foregroundStyle(.secondary)
+            Slider(value: Binding(
+                get: { clampedIconSize },
+                set: { iconSize = $0 }
+            ), in: 48...160)
+            .frame(width: 140)
+            .help("拖动调整图标大小")
+            Image(systemName: "plus.magnifyingglass").font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 
     private var emptyState: some View {
@@ -125,10 +249,24 @@ struct ContentView: View {
         }.padding(14).background(.bar).overlay(alignment: .top) { Divider() }
     }
 
+    @ViewBuilder
+    private func itemContextMenu(_ item: CloudItem) -> some View {
+        if item.isFolder { Button("打开") { model.open(item) } }
+        Button("设置读写权限…") { model.confirmSetPermissions(item) }
+        Divider()
+        Button("删除", role: .destructive) { model.confirmDelete(item) }
+    }
+
+    private func deleteSelected() {
+        guard let id = model.selected, let item = model.items.first(where: { $0.id == id }) else { return }
+        model.confirmDelete(item)
+    }
+
     private func status(_ entry: UploadEntry) -> String {
         switch entry.state { case .queued: "等待中"; case .uploading: "\(Int(entry.fraction * 100))%"; case .completed: "完成"; case .failed: "失败" }
     }
-    private func icon(for name: String) -> String {
+
+    private func iconName(for name: String) -> String {
         let ext = (name as NSString).pathExtension.lowercased()
         if ["png", "jpg", "jpeg", "gif", "heic"].contains(ext) { return "photo.fill" }
         if ["mp4", "mov", "m4v"].contains(ext) { return "film.fill" }

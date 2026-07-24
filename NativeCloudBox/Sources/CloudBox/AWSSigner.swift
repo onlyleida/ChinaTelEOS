@@ -2,7 +2,14 @@ import Foundation
 import CryptoKit
 
 enum AWSSigner {
-    static func signedRequest(url: URL, method: String, bodyHash: String, configuration: CloudConfiguration, date: Date = Date()) -> URLRequest {
+    static func signedRequest(
+        url: URL,
+        method: String,
+        bodyHash: String,
+        configuration: CloudConfiguration,
+        extraHeaders: [String: String] = [:],
+        date: Date = Date()
+    ) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
 
@@ -17,8 +24,18 @@ enum AWSSigner {
         let host = url.host ?? ""
         let path = url.path.isEmpty ? "/" : encodedPath(url.path)
         let query = canonicalQuery(url)
-        let canonicalHeaders = "host:\(host)\nx-amz-content-sha256:\(bodyHash)\nx-amz-date:\(timestamp)\n"
-        let signedHeaders = "host;x-amz-content-sha256;x-amz-date"
+
+        var headers: [String: String] = [
+            "host": host,
+            "x-amz-content-sha256": bodyHash,
+            "x-amz-date": timestamp
+        ]
+        for (key, value) in extraHeaders {
+            headers[key.lowercased()] = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let sortedKeys = headers.keys.sorted()
+        let canonicalHeaders = sortedKeys.map { "\($0):\(headers[$0]!)" }.joined(separator: "\n") + "\n"
+        let signedHeaders = sortedKeys.joined(separator: ";")
         let canonicalRequest = "\(method)\n\(path)\n\(query)\n\(canonicalHeaders)\n\(signedHeaders)\n\(bodyHash)"
         let scope = "\(day)/\(configuration.region)/s3/aws4_request"
         let stringToSign = "AWS4-HMAC-SHA256\n\(timestamp)\n\(scope)\n\(sha256(canonicalRequest.data(using: .utf8)!))"
@@ -28,8 +45,9 @@ enum AWSSigner {
         let signingKey = hmac(serviceKey, "aws4_request")
         let signature = hmac(signingKey, stringToSign).map { String(format: "%02x", $0) }.joined()
 
-        request.setValue(timestamp, forHTTPHeaderField: "x-amz-date")
-        request.setValue(bodyHash, forHTTPHeaderField: "x-amz-content-sha256")
+        for key in sortedKeys where key != "host" {
+            request.setValue(headers[key], forHTTPHeaderField: key)
+        }
         request.setValue("AWS4-HMAC-SHA256 Credential=\(configuration.accessKey)/\(scope), SignedHeaders=\(signedHeaders), Signature=\(signature)", forHTTPHeaderField: "Authorization")
         return request
     }
